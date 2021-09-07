@@ -30,14 +30,15 @@ module Pod
       attr_reader :installer, :pod_target, :file_accessors, :non_library_spec, :label, :package, :default_xcconfigs, :resolved_xconfig_by_config
       private :installer, :pod_target, :file_accessors, :non_library_spec, :label, :package, :default_xcconfigs, :resolved_xconfig_by_config
 
-      def initialize(installer, pod_target, non_library_spec = nil, default_xcconfigs = {})
+      def initialize(installer, workspace, pod_target, non_library_spec = nil, default_xcconfigs = {})
         @installer = installer
         @pod_target = pod_target
         @file_accessors = non_library_spec ? pod_target.file_accessors.select { |fa| fa.spec == non_library_spec } : pod_target.file_accessors.select { |fa| fa.spec.library_specification? }
         @non_library_spec = non_library_spec
         @label = (non_library_spec ? pod_target.non_library_spec_label(non_library_spec) : pod_target.label)
         @package_dir = installer.sandbox.pod_dir(pod_target.pod_name)
-        @package = installer.sandbox.pod_dir(pod_target.pod_name).relative_path_from(installer.config.installation_root).to_s
+        @package = installer.sandbox.pod_dir(pod_target.pod_name).relative_path_from(workspace).to_s
+        @workspace = workspace
         @default_xcconfigs = default_xcconfigs
         @resolved_xconfig_by_config = {}
       end
@@ -66,7 +67,7 @@ module Pod
         end
 
         app_spec, app_target = *app_host_info
-        Target.new(installer, app_target, app_spec)
+        Target.new(installer, installer.config.installation_root, app_target, app_spec)
       end
 
       def type
@@ -96,7 +97,7 @@ module Pod
             raise "Unhandled: #{non_library_spec.spec_type}"
           end
 
-        targets.transform_values { |v| v.uniq.map { |target| self.class.new(installer, target) } }
+        targets.transform_values { |v| v.uniq.map { |target| self.class.new(installer, @workspace, target) } }
       end
 
       def product_module_name

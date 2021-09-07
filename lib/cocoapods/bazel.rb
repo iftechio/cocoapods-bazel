@@ -17,7 +17,7 @@ module Pod
       end
 
       UI.titled_section 'Generating Bazel files' do
-        workspace = installer.config.installation_root
+        workspace = ENV['WORKSPACE_PATH'].nil? ? installer.config.installation_root : ENV['WORKSPACE_PATH']
         sandbox = installer.sandbox
 
         # Ensure we declare the sandbox (Pods/) as a package so each Pod (as a package) belongs to sandbox root package instead
@@ -38,9 +38,9 @@ module Pod
 
           build_file = build_files[package]
 
-          bazel_targets = [Target.new(installer, pod_target, nil, default_xcconfigs)] +
-                          pod_target.file_accessors.reject { |fa| fa.spec.library_specification? }.map { |fa| Target.new(installer, pod_target, fa.spec, default_xcconfigs) }
-
+          bazel_targets = [Target.new(installer, workspace, pod_target, nil, default_xcconfigs)] +
+                          pod_target.file_accessors.reject { |fa| fa.spec.library_specification? }.map { |fa| Target.new(installer, workspace, pod_target, fa.spec, default_xcconfigs) }
+          p build_file
           bazel_targets.each do |t|
             load = config.load_for(macro: t.type)
             build_file.add_load(of: load[:rule], from: load[:load])
