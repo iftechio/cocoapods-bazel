@@ -473,8 +473,9 @@ module Pod
         labels_by_config = {}
 
         if !sorted_debug_labels.empty? || !sorted_release_labels.empty?
-          labels_by_config[build_settings_label(:debug)] = sorted_debug_labels
-          labels_by_config[build_settings_label(:release)] = sorted_release_labels
+          labels_by_config[build_settings_label(:deps_debug)] = sorted_debug_labels
+          labels_by_config[build_settings_label(:deps_release)] = sorted_release_labels
+          labels_by_config[build_settings_label(:deps_debug_and_release)] = sorted_debug_labels + sorted_release_labels
         end
 
         if labels_by_config.empty? # no per-config dependency

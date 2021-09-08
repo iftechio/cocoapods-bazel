@@ -6,6 +6,12 @@ string_flag(
     visibility = ["//visibility:public"],
 )
 
+string_flag(
+    name = "deps",
+    build_setting_default = "deps_debug",
+    visibility = ["//visibility:public"],
+)
+
 config_setting(
     name = "debug",
     flag_values = {":config": "debug"},
@@ -14,4 +20,19 @@ config_setting(
 config_setting(
     name = "release",
     flag_values = {":config": "release"},
+)
+
+config_setting(
+    name = "deps_debug",
+    flag_values = {":deps": "deps_debug"},
+)
+
+config_setting(
+    name = "deps_release",
+    flag_values = {":deps": "deps_release"},
+)
+
+config_setting(
+    name = "deps_debug_and_release",
+    flag_values = {":deps": "deps_debug_and_release"},
 )
