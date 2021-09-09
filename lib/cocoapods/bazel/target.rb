@@ -181,7 +181,10 @@ module Pod
       end
 
       def pod_target_xcconfig_header_search_paths(configuration)
-        settings = pod_target_xcconfig(configuration: configuration).merge('PODS_TARGET_SRCROOT' => @package)
+        pods_root = installer.config.project_pods_root.relative_path_from(@workspace).to_s
+        settings = pod_target_xcconfig(configuration: configuration)
+        .merge('PODS_TARGET_SRCROOT' => @package)
+        .merge('PODS_ROOT' => pods_root)
         resolved_build_setting_value('HEADER_SEARCH_PATHS', settings: settings) || []
       end
 
