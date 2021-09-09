@@ -202,6 +202,14 @@ module Pod
           end
         copts = resolved_value_by_build_setting(setting)
         copts = [copts] if copts&.is_a?(String)
+        pod_installer = Pod::Installer::Xcode::PodsProjectGenerator::PodTargetInstaller.new(@installer.sandbox, @project, @pod_target, pod_target.umbrella_header_path)
+        compiler_flags = pod_installer.send(:compiler_flags_for_consumer, @pod_target.root_spec.consumer(@pod_target.platform), true, type)
+
+        if copts.nil?
+          copts = compiler_flags.split(' ')
+        else
+          copts += compiler_flags.split(' ')
+        end
 
         debug_copts = copts_for_search_paths_by_config(type, :debug)
         release_copts = copts_for_search_paths_by_config(type, :release)
