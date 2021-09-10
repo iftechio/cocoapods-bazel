@@ -185,6 +185,8 @@ module Pod
         settings = pod_target_xcconfig(configuration: configuration)
         .merge('PODS_TARGET_SRCROOT' => @package)
         .merge('PODS_ROOT' => pods_root)
+        headers = pod_target.build_settings_for_spec(pod_target.root_spec, configuration: configuration).header_search_paths
+        settings['HEADER_SEARCH_PATHS'] = headers.join(" ")
         resolved_build_setting_value('HEADER_SEARCH_PATHS', settings: settings) || []
       end
 
