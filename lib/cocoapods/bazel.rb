@@ -40,7 +40,6 @@ module Pod
 
           bazel_targets = [Target.new(installer, workspace, pod_target, nil, default_xcconfigs)] +
                           pod_target.file_accessors.reject { |fa| fa.spec.library_specification? }.map { |fa| Target.new(installer, workspace, pod_target, fa.spec, default_xcconfigs) }
-          p build_file
           bazel_targets.each do |t|
             load = config.load_for(macro: t.type)
             build_file.add_load(of: load[:rule], from: load[:load])
