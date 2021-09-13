@@ -189,7 +189,7 @@ module Pod
         if settings['HEADER_SEARCH_PATHS'].nil?
           settings['HEADER_SEARCH_PATHS'] = headers.join(' ')
         else
-          settings['HEADER_SEARCH_PATHS'] = settings['HEADER_SEARCH_PATHS'] + headers.join(' ')
+          settings['HEADER_SEARCH_PATHS'] = settings['HEADER_SEARCH_PATHS'] + ' ' + headers.join(' ')
         end
         resolved_build_setting_value('HEADER_SEARCH_PATHS', settings: settings) || []
       end
