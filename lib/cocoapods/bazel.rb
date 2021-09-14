@@ -17,45 +17,67 @@ module Pod
       end
 
       UI.titled_section 'Generating Bazel files' do
-        workspace = ENV['WORKSPACE_PATH'].nil? ? installer.config.installation_root : ENV['WORKSPACE_PATH']
         sandbox = installer.sandbox
+        workspace = installer.config.installation_root
+        cocoapods_bazel_path = File.join(sandbox.root, 'cocoapods-bazel')
+        FileUtils.mkdir_p cocoapods_bazel_path
 
         # Ensure we declare the sandbox (Pods/) as a package so each Pod (as a package) belongs to sandbox root package instead
         FileUtils.touch(File.join(installer.config.sandbox_root, 'BUILD.bazel'))
 
         build_files = Hash.new { |h, k| h[k] = StarlarkCompiler::BuildFile.new(workspace: workspace, package: k) }
         installer.pod_targets.each do |pod_target|
-          package = sandbox.pod_dir(pod_target.pod_name).relative_path_from(workspace).to_s
-          if package.start_with?('..')
-            raise Informative, <<~MSG
-              Bazel does not support Pod located outside of current workspace: \"#{package}\".
-              To fix this, you can move the Pod into workspace,
-              or you can symlink the Pod inside the workspace by running `ln -s <path_to_pod> .` at workspace root
-              Then change path declared in Podfile to `./<pod_name>`
-              Current workspace: #{workspace}
-            MSG
-          end
+          # package = sandbox.pod_dir(pod_target.pod_name).relative_path_from(workspace).to_s
+          # if package.start_with?('..')
+          #   raise Informative, <<~MSG
+          #     Bazel does not support Pod located outside of current workspace: \"#{package}\".
+          #     To fix this, you can move the Pod into workspace,
+          #     or you can symlink the Pod inside the workspace by running `ln -s <path_to_pod> .` at workspace root
+          #     Then change path declared in Podfile to `./<pod_name>`
+          #     Current workspace: #{workspace}
+          #   MSG
+          # end
+          #
+          # build_file = build_files[package]
 
-          build_file = build_files[package]
-
-          bazel_targets = [Target.new(installer, workspace, pod_target, nil, default_xcconfigs)] +
-                          pod_target.file_accessors.reject { |fa| fa.spec.library_specification? }.map { |fa| Target.new(installer, workspace, pod_target, fa.spec, default_xcconfigs) }
-          bazel_targets.each do |t|
+          bazel_label_infos = [[pod_target, nil]] +
+                          pod_target.file_accessors.reject { |fa| fa.spec.library_specification? }.map { |fa| [pod_target, fa.spec] }
+          bazel_targets_and_labels = bazel_label_infos.map { |args| [args[0], label(args[0], args[1]), args[1]] }
+          bazel_targets_and_labels.each { |args|
+            target = args[0]
+            label = args[1]
+            non_library_spec = args[2]
+            package_abs = Pathname.new(cocoapods_bazel_path + "/" + label)
+            FileUtils.mkdir_p package_abs.to_s
+            build_file = build_files[package_abs.relative_path_from(workspace).to_s]
+            file_accessors = non_library_spec ? target.file_accessors.select { |fa| fa.spec == non_library_spec } : target.file_accessors.select { |fa| fa.spec.library_specification? }
+            all_files = Pod::Sandbox::FileAccessor.all_files(file_accessors)
+            for file in all_files
+              relative_path = file.relative_path_from(sandbox.pod_dir(target.pod_name))
+              new_path = package_abs + relative_path
+              unless File.exist? new_path
+                FileUtils.mkdir_p File.dirname(new_path)
+                File.symlink(file, new_path)
+              end
+            end
+            t = Target.new(installer, workspace, target, package_abs.to_s, cocoapods_bazel_path, non_library_spec, default_xcconfigs)
             load = config.load_for(macro: t.type)
             build_file.add_load(of: load[:rule], from: load[:load])
             build_file.add_target StarlarkCompiler::AST::FunctionCall.new(load[:rule], **t.to_rule_kwargs)
-          end
+          }
+
         end
 
         build_files.each_value(&:save!)
         format_files(build_files: build_files, buildifier: config.buildifier, workspace: workspace)
 
-        cocoapods_bazel_path = File.join(sandbox.root, 'cocoapods-bazel')
-        FileUtils.mkdir_p cocoapods_bazel_path
-
         write_cocoapods_bazel_build_file(cocoapods_bazel_path, workspace, config)
         write_non_empty_default_xcconfigs(cocoapods_bazel_path, default_xcconfigs)
       end
+    end
+
+    def self.label(target, non_library_spec)
+      non_library_spec ? target.non_library_spec_label(non_library_spec) : target.label
     end
 
     def self.write_cocoapods_bazel_build_file(path, workspace, config)
