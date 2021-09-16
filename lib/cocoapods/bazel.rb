@@ -60,7 +60,7 @@ module Pod
                 File.symlink(file, new_path)
               end
             end
-            t = Target.new(installer, workspace, target, package_abs.to_s, cocoapods_bazel_path, non_library_spec, default_xcconfigs)
+            t = Target.new(installer, workspace, redirect_file_accessors(file_accessors, package_abs), target, package_abs, cocoapods_bazel_path, non_library_spec, default_xcconfigs)
             load = config.load_for(macro: t.type)
             build_file.add_load(of: load[:rule], from: load[:load])
             build_file.add_target StarlarkCompiler::AST::FunctionCall.new(load[:rule], **t.to_rule_kwargs)
@@ -78,6 +78,10 @@ module Pod
 
     def self.label(target, non_library_spec)
       non_library_spec ? target.non_library_spec_label(non_library_spec) : target.label
+    end
+
+    def self.redirect_file_accessors(file_accessors, new_package)
+      file_accessors.map { |f| Pod::Sandbox::FileAccessor.new(Pod::Sandbox::PathList.new(new_package), f.spec_consumer) }
     end
 
     def self.write_cocoapods_bazel_build_file(path, workspace, config)

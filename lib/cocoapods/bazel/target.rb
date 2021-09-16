@@ -30,17 +30,22 @@ module Pod
       attr_reader :installer, :pod_target, :file_accessors, :non_library_spec, :label, :package, :default_xcconfigs, :resolved_xconfig_by_config
       private :installer, :pod_target, :file_accessors, :non_library_spec, :label, :package, :default_xcconfigs, :resolved_xconfig_by_config
 
-      def initialize(installer, workspace, pod_target, package, package_dir, non_library_spec = nil, default_xcconfigs = {})
+      def initialize(installer, workspace, file_accessors, pod_target, package_abs, root, non_library_spec = nil, default_xcconfigs = {})
         @installer = installer
         @pod_target = pod_target
-        @file_accessors = non_library_spec ? pod_target.file_accessors.select { |fa| fa.spec == non_library_spec } : pod_target.file_accessors.select { |fa| fa.spec.library_specification? }
+        @file_accessors = file_accessors
         @non_library_spec = non_library_spec
         @label = (non_library_spec ? pod_target.non_library_spec_label(non_library_spec) : pod_target.label)
-        @package_dir = package_dir
-        @package = package
+        @root = root
+        @package = Pathname.new(package_abs).relative_path_from(workspace).to_s
+        @package_dir = package_abs.to_s
         @workspace = workspace
         @default_xcconfigs = default_xcconfigs
         @resolved_xconfig_by_config = {}
+      end
+
+      def self.file_accessors(pod_target, non_library_spec)
+        non_library_spec ? pod_target.file_accessors.select { |fa| fa.spec == non_library_spec } : pod_target.file_accessors.select { |fa| fa.spec.library_specification? }
       end
 
       def bazel_label(relative_to: nil)
@@ -97,7 +102,14 @@ module Pod
             raise "Unhandled: #{non_library_spec.spec_type}"
           end
 
-        targets.transform_values { |v| v.uniq.map { |target| self.class.new(installer, @workspace, target, @package, @package_dir) } }
+        targets.transform_values do |v|
+          v.uniq.map do |target|
+            label = Bazel.label(target, nil)
+            package_abs = Pathname.new("#{@root}/#{label}").to_s
+            file_accessors = Target.file_accessors(target, nil)
+            self.class.new(installer, @workspace, Bazel.redirect_file_accessors(file_accessors, package_abs), target, package_abs, @root)
+          end
+        end
       end
 
       def product_module_name
@@ -322,7 +334,7 @@ module Pod
 
           Array(fa_by_arc[TrueClass]).each do |fa|
             exclude_files = fa.spec_consumer.exclude_files
-            for source in fa.spec_consumer.source_files
+            fa.spec_consumer.source_files.each do |source|
               no_need_glob = glob_need_be_expanded_for_bazel(source, exclude_files)
               if no_need_glob.nil?
                 srcs_need_glob[fa.spec_consumer.exclude_files] += expand.call(source)
@@ -333,7 +345,7 @@ module Pod
           end
           Array(fa_by_arc[FalseClass]).each do |fa|
             exclude_files = fa.spec_consumer.exclude_files
-            for source in fa.spec_consumer.source_files
+            fa.spec_consumer.source_files.each do |source|
               no_need_glob = glob_need_be_expanded_for_bazel(source, exclude_files)
               if no_need_glob.nil?
                 non_arc_srcs_need_glob[fa.spec_consumer.exclude_files] += expand.call(source)
@@ -344,22 +356,22 @@ module Pod
           end
           (Array(fa_by_arc[Array]) + Array(fa_by_arc[String])).each do |fa|
             exclude_files = fa.spec_consumer.exclude_files
-            for source in Array(fa.spec_consumer.requires_arc)
+            Array(fa.spec_consumer.requires_arc).each do |source|
               no_need_glob = glob_need_be_expanded_for_bazel(source, exclude_files)
               if no_need_glob.nil?
                 srcs_need_glob[fa.spec_consumer.exclude_files] += expand.call(source)
               else
                 srcs_no_need_glob += no_need_glob
               end
-            end 
-            for source in fa.spec_consumer.source_files
+            end
+            fa.spec_consumer.source_files.each do |source|
               no_need_glob = glob_need_be_expanded_for_bazel(source, exclude_files)
               if no_need_glob.nil?
                 non_arc_srcs_need_glob[fa.spec_consumer.exclude_files] += expand.call(source)
               else
                 non_arc_srcs_no_need_glob += no_need_glob
               end
-            end 
+            end
           end
 
           m = lambda do |h|
@@ -376,12 +388,12 @@ module Pod
           end
           target_path = installer.sandbox.pod_dir(pod_target.pod_name)
           workspace_path = Pathname.new(@workspace)
-          srcs_no_need_glob = srcs_no_need_glob.map { |path|
+          srcs_no_need_glob = srcs_no_need_glob.map do |path|
             (workspace_path + path).relative_path_from(target_path).to_s
-          }
-          non_arc_srcs_no_need_glob = non_arc_srcs_no_need_glob.map { |path|
+          end
+          non_arc_srcs_no_need_glob = non_arc_srcs_no_need_glob.map do |path|
             (workspace_path + path).relative_path_from(target_path).to_s
-          }
+          end
           kwargs[:srcs] = (m[srcs_need_glob] + [starlark { array(srcs_no_need_glob) }]).reduce(&:+)
           kwargs[:non_arc_srcs] = (m[non_arc_srcs_need_glob] + [starlark { array(non_arc_srcs_no_need_glob) }]).reduce(&:+)
         end
@@ -535,7 +547,7 @@ module Pod
         end
       end
 
-      def glob(attr:, return_files: !pod_target.sandbox.local?(pod_target.pod_name), sorted: true, excludes: [], exclude_directories: 1)
+      def glob(attr:, return_files: true, sorted: true, excludes: [], exclude_directories: 1)
         if !return_files
           case attr
           when :public_headers then attr = :public_header_files
@@ -552,6 +564,13 @@ module Pod
             starlark { function_call(:glob, globs, **excludes) }
           end
         else
+          # if attr == :public_headers
+          #   a = file_accessors.flat_map(&:public_headers).compact
+          #               .map { |path| path.relative_path_from(@package_dir).to_s }
+          #               .yield_self { |paths| sorted ? paths.sort : paths }
+          #               .uniq
+          #   p "#{label} #{a}"
+          # end
           file_accessors.flat_map(&attr)
                         .compact
                         .map { |path| path.relative_path_from(@package_dir).to_s }
@@ -584,7 +603,7 @@ module Pod
           elsif glob.end_with?('/*')
             [glob.sub(%r{/\*$}, '/**/*')]
           else
-            [glob, glob.chomp('/') + '/**/*']
+            [glob, "#{glob.chomp('/')}/**/*"]
           end
         else
           [glob]
@@ -593,12 +612,12 @@ module Pod
 
       def glob_need_be_expanded_for_bazel(glob, exclude_files)
         Dir.chdir(@workspace) do
-          current_target_dir = installer.sandbox.pod_dir(pod_target.pod_name).relative_path_from(@workspace)
+          current_target_dir = Pathname.new(@package)
           files = Dir.glob(glob, base: current_target_dir).map { |path| current_target_dir + path }.map { |p| p.to_s }
           exclude_files = exclude_files.flat_map { |exclude| Dir.glob(exclude, base: current_target_dir) }.map { |path| current_target_dir + path }.map { |p| p.to_s }
           need_expand = false
           filtered_files = []
-          for file in files
+          files.each do |file|
             path = Pathname.new(file)
             if File.directory?(path)
               next
@@ -621,12 +640,11 @@ module Pod
       def is_file_belongs_to_this_target(file)
         all_dirs = installer.pod_targets.map { |target| installer.sandbox.pod_dir(target.pod_name).relative_path_from(@workspace).to_s }
         current_target_dir = installer.sandbox.pod_dir(pod_target.pod_name).relative_path_from(@workspace).to_s
-        for dir in all_dirs
-          if file.start_with?(dir)
-            if dir.start_with?(current_target_dir) && dir != current_target_dir
-              ## This file belongs to subpackage, glob will not be able to find it.
-              return false
-            end
+        all_dirs.each do |dir|
+          next unless file.start_with?(dir)
+          if dir.start_with?(current_target_dir) && dir != current_target_dir
+            ## This file belongs to subpackage, glob will not be able to find it.
+            return false
           end
         end
         true
