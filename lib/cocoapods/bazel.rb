@@ -51,13 +51,21 @@ module Pod
             FileUtils.mkdir_p package_abs.to_s
             build_file = build_files[package_abs.relative_path_from(workspace).to_s]
             file_accessors = non_library_spec ? target.file_accessors.select { |fa| fa.spec == non_library_spec } : target.file_accessors.select { |fa| fa.spec.library_specification? }
-            all_files = Pod::Sandbox::FileAccessor.all_files(file_accessors)
-            for file in all_files
+            pod_dir = sandbox.pod_dir(target.pod_name)
+            all_files = pod_dir.find
+            all_files.each do |file|
+              next if file.basename().to_s == 'BUILD.bazel'
+              next if file.directory?
+
               relative_path = file.relative_path_from(sandbox.pod_dir(target.pod_name))
               new_path = package_abs + relative_path
-              unless File.exist? new_path
+              next if File.exist? new_path
+
+              begin
                 FileUtils.mkdir_p File.dirname(new_path)
                 File.symlink(file, new_path)
+              ensure
+                next
               end
             end
             t = Target.new(installer, workspace, redirect_file_accessors(file_accessors, package_abs), target, package_abs, cocoapods_bazel_path, non_library_spec, default_xcconfigs)
