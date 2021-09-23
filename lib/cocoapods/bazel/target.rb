@@ -192,12 +192,21 @@ module Pod
         end
       end
 
-      def pod_target_xcconfig_header_search_paths(configuration)
+      def pod_target_xcconfig_header_search_paths(type, configuration)
         pods_root = installer.config.project_pods_root.relative_path_from(@workspace).to_s
         settings = pod_target_xcconfig(configuration: configuration)
         .merge('PODS_TARGET_SRCROOT' => @package)
         .merge('PODS_ROOT' => pods_root)
-        resolved_build_setting_value('HEADER_SEARCH_PATHS', settings: settings) || []
+        ## We will not allow non modular header include for swift.
+        return resolved_build_setting_value('HEADER_SEARCH_PATHS', settings: settings) || [] if type == :swift
+
+        headers = pod_target.build_settings_for_spec(pod_target.root_spec, configuration: configuration).header_search_paths
+        if settings['HEADER_SEARCH_PATHS'].nil?
+          settings['HEADER_SEARCH_PATHS'] = headers.join(' ')
+        else
+          settings['HEADER_SEARCH_PATHS'] = settings['HEADER_SEARCH_PATHS'] + ' ' + headers.join(' ')
+        end
+        return resolved_build_setting_value('HEADER_SEARCH_PATHS', settings: settings) || []
       end
 
       def pod_target_xcconfig_user_header_search_paths(configuration)
@@ -262,7 +271,7 @@ module Pod
           end
 
         copts = []
-        pod_target_xcconfig_header_search_paths(configuration).each do |path|
+        pod_target_xcconfig_header_search_paths(type, configuration).each do |path|
           iquote = "-I#{path}"
           copts << additional_flag if additional_flag
           copts << iquote
