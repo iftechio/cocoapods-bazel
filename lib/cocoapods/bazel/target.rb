@@ -434,6 +434,7 @@ module Pod
 
         # any compatible provider: CCProvider, SwiftInfo, etc
         kwargs[:deps] = deps_by_config
+        kwargs[:tags] = ["xcodeproj-ignore-as-target"]
 
         case non_library_spec&.spec_type
         when :test
